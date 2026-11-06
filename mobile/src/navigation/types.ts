@@ -5,7 +5,6 @@ export type RootStackParamList = {
   Review: {
     recording: LocalRecording;
     transcription: string;
-    engine: string;
   };
   RecordingsList: undefined;
   RecordingDetails: {

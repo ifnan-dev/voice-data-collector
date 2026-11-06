@@ -87,7 +87,6 @@ Required (keep secret, backend only):
 - `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` — Cloudflare R2 (S3) credentials.
 - `R2_ENDPOINT` — `https://<account-id>.r2.cloudflarestorage.com`
 - `R2_BUCKET` — private R2 bucket name.
-- `TRANSCRIPTION_ENGINE` — `stub` (offline, no model download), `whisper` (faster-whisper), or `custom-asr` (future Afaan Oromo model).
 
 2. Install dependencies:
 
@@ -102,16 +101,14 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-### Transcription engine (modular)
+### Transcription (manual only)
 
-ASR is pluggable in `backend/app/services/transcription.py`:
+This app does **not** perform automatic transcription. The user records audio and then types the Afaan Oromo transcription manually in the Review screen before saving. The `/api/transcribe` endpoint and Whisper integration have been removed so no system transcribes the audio.
 
-- `ASREngine` — abstract interface (`transcribe(audio_path, language)`).
-- `WhisperEngine` — faster-whisper (default when `TRANSCRIPTION_ENGINE=whisper`).
-- `StubEngine` — deterministic placeholder (default for offline dev).
-- `CustomAfarOromoEngine` — placeholder for a future custom Afaan Oromo ASR model.
+The app works interchangeably in two directions:
 
-To switch engines, change `TRANSCRIPTION_ENGINE` in `backend/.env`. No API or mobile changes needed.
+1. **Audio → Text:** Record audio, then manually type the transcription in Review, then save.
+2. **Text → Audio:** On the Record screen, type the Afaan Oromo text first (optional preset), record audio for it, then save (the text is pre-filled in Review and can be edited).
 
 ## Mobile setup
 
@@ -138,12 +135,28 @@ Then press `a` for Android emulator / `i` for iOS simulator, or scan with the Ex
 
 > **Note:** `expo-audio` has native code. For a physical device you need a development build (`npx expo run:android` or EAS). Expo Go includes only the bundled native modules; audio recording may require a dev build depending on your Expo SDK version.
 
+2. Install dependencies:
+
+```bash
+cd mobile
+npm install
+```
+
+3. Run (Expo dev server):
+
+```bash
+npx expo start
+```
+
+Then press `a` for Android emulator / `i` for iOS simulator, or scan with the Expo Go app on a physical device.
+
+> **Note:** `expo-audio` has native code. For a physical device you need a development build (`npx expo run:android` or EAS). Expo Go includes only the bundled native modules; audio recording may require a dev build depending on your Expo SDK version.
+
 ## API
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/transcribe` | POST | Accept audio file + language, return transcription |
-| `/api/recordings` | POST | Upload audio to R2 + save metadata/transcription to Supabase |
+| `/api/recordings` | POST | Upload audio to R2 + save metadata and manual transcription to Supabase |
 | `/api/recordings` | GET | List saved recordings (newest first) |
 | `/api/recordings/{id}` | GET | Get a single recording |
 | `/api/recordings/{id}/audio` | GET | Temporary signed URL for private R2 audio playback |
@@ -152,26 +165,10 @@ Then press `a` for Android emulator / `i` for iOS simulator, or scan with the Ex
 
 All secret credentials (R2 keys, Supabase service-role key) live **only** on the backend. The mobile app never sees them.
 
-## Security
+## Save-recording workflow
 
-- R2 bucket is private; audio playback uses time-limited signed URLs.
-- Supabase access uses the service-role key exclusively on the backend.
-- Mobile app contains no secrets (`EXPO_PUBLIC_API_URL` is the only config).
-- Audio uploads are validated for extension (`.wav .mp3 .m4a .ogg .webm`) and size (default 50 MB).
-- Credentials and audio content are never logged.
-
-## Save-recording workflow (verified)
-
-1. Mobile generates no ID — the backend generates a UUID server-side.
+1. The backend generates a UUID server-side.
 2. Audio is uploaded to R2 at `recordings/<uuid>.<ext>`.
-3. The same UUID + object path are inserted into Supabase in one row.
+3. The same UUID + object path and the user's manual transcription are inserted into Supabase in one row.
 4. On R2 failure the error is surfaced and the local temp file is preserved.
 5. On Supabase failure the just-uploaded R2 object is deleted to avoid orphans, and the error is surfaced.
-
-## Audio format
-
-Recordings use 16 kHz mono, suitable for speech recognition (Whisper resamples internally). Container is `.m4a`/AAC (cross-platform via `expo-audio`); the R2 object path matches the saved file extension.
-
-## License
-
-MIT

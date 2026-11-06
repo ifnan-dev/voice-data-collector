@@ -19,12 +19,12 @@ type ReviewRouteProp = RouteProp<RootStackParamList, "Review">;
 export default function ReviewScreen() {
   const navigation = useNavigation<ReviewNavigationProp>();
   const route = useRoute<ReviewRouteProp>();
-  const { recording, transcription: initialTranscription, engine } = route.params;
+  const { recording, transcription: initialTranscription = "" } = route.params;
   const [transcription, setTranscription] = useState(initialTranscription);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const { playing, loading, play, stop } = usePlayback();
+  const { play, stop } = usePlayback();
 
   useEffect(() => {
     return () => { stop(); };
@@ -80,7 +80,7 @@ export default function ReviewScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.title}>Review Transcription</Text>
-          <Text style={styles.subtitle}>Engine: {engine}</Text>
+          <Text style={styles.subtitle}>Enter the Afaan Oromo transcription manually</Text>
         </View>
 
         <View style={styles.card}>

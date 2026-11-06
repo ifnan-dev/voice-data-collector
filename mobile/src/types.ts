@@ -15,12 +15,6 @@ export interface Recording {
   created_at: string;
 }
 
-export interface TranscriptionResult {
-  transcription: string;
-  language: string;
-  engine: string;
-}
-
 export interface ApiError {
   message: string;
   status?: number;

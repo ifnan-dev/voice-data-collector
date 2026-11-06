@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from "axios";
-import type { TranscriptionResult, Recording, ApiError } from "../types";
+import type { Recording, ApiError } from "../types";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -27,22 +27,6 @@ export class ApiService {
 
   private filePart(uri: string, fileName: string, mimeType: string): RNFiles {
     return { uri, type: mimeType, name: fileName };
-  }
-
-  async transcribe(
-    uri: string,
-    fileName: string,
-    mimeType: string,
-    language: string = "om"
-  ): Promise<TranscriptionResult> {
-    const formData = new FormData();
-    (formData as any).append("file", this.filePart(uri, fileName, mimeType));
-    (formData as any).append("language", language);
-
-    const res = await this.client.post("/api/transcribe", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    return res.data;
   }
 
   async saveRecording(

@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, Alert, StatusBar, ScrollView,
+  View,
+  Text,
+  StyleSheet,
+  Alert,
+  StatusBar,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { StackNavigationProp } from "@react-navigation/stack";
@@ -12,14 +19,16 @@ import { TimerDisplay } from "../components/TimerDisplay";
 import { AudioPlayer } from "../components/AudioPlayer";
 import { LocalRecording } from "../types";
 
+type RecordNavigationProp = StackNavigationProp<RootStackParamList, "Record">;
+
 export default function RecordScreen() {
-  const navigation = useNavigation<StackNavigationProp<RootStackParamList, "Record">>();
+  const navigation = useNavigation<RecordNavigationProp>();
   const {
     status, permission, error, isRecording, uri, durationSeconds,
     start, stop, pause, resume, checkPermission,
   } = useRecorder();
   const [localRecording, setLocalRecording] = useState<LocalRecording | null>(null);
-  const [transcription, setTranscription] = useState("");
+  const [presetText, setPresetText] = useState("");
   const [savingTranscribe, setSavingTranscribe] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -56,33 +65,17 @@ export default function RecordScreen() {
       timerRef.current = setInterval(() => setSeconds((s) => s + 0.1), 100);
     }
   }, [status, start, stop, resume, uri, durationSeconds]);
-  const handleTranscribe = useCallback(async () => {
+
+  const handleReview = useCallback(() => {
     if (!localRecording) return;
-    setSavingTranscribe(true);
-    setTranscribeError(null);
-    try {
-      const result = await apiService.transcribe(
-        localRecording.uri,
-        `recording-${Date.now()}.m4a`,
-        localRecording.mimeType,
-        "om"
-      );
-      setTranscription(result.transcription);
-      navigation.navigate("Review", {
-        recording: localRecording,
-        transcription: result.transcription,
-        engine: result.engine,
-      });
-    } catch (e: any) {
-      setTranscribeError(e?.message ?? "Transcription failed");
-    } finally {
-      setSavingTranscribe(false);
-    }
-  }, [localRecording, navigation]);
+    navigation.navigate("Review", {
+      recording: localRecording,
+      transcription: presetText,
+    });
+  }, [localRecording, presetText, navigation]);
 
   const handleReRecord = useCallback(() => {
     setLocalRecording(null);
-    setTranscription("");
     setSeconds(0);
     setTranscribeError(null);
   }, []);
@@ -104,6 +97,21 @@ export default function RecordScreen() {
       )}
       {error && <View style={styles.alertError}><Text style={styles.errorText}>{error}</Text></View>}
       {transcribeError && <View style={styles.alertError}><Text style={styles.errorText}>{transcribeError}</Text></View>}
+
+      {/* Optional preset text: record audio for existing text (text -> audio flow) */}
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Optional: transcription text (record audio for this text)</Text>
+        <TextInput
+          style={styles.textInput}
+          value={presetText}
+          onChangeText={setPresetText}
+          placeholder="Type the Afaan Oromo text to record audio for..."
+          multiline
+          numberOfLines={3}
+          spellCheck={false}
+          autoCapitalize="sentences"
+        />
+      </View>
 
       <View style={styles.card}>
         <TimerDisplay seconds={seconds} />
@@ -132,7 +140,7 @@ export default function RecordScreen() {
           <AudioPlayer uri={localRecording.uri} />
           <View style={styles.row}>
             <Button title="Re-record" onPress={handleReRecord} variant="outline" />
-            <Button title="Transcribe" onPress={handleTranscribe} variant="primary" loading={savingTranscribe} disabled={savingTranscribe} />
+            <Button title="Continue to Transcription" onPress={handleReview} variant="primary" loading={savingTranscribe} disabled={savingTranscribe} />
           </View>
         </View>
       )}
@@ -151,7 +159,17 @@ const styles = StyleSheet.create({
   alertError: { backgroundColor: "#fee2e2", borderRadius: 8, padding: 10, marginBottom: 12 },
   errorText: { fontSize: 13, color: "#dc2626" },
   card: { backgroundColor: "#fff", borderRadius: 12, padding: 16, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
-  sectionTitle: { fontSize: 15, fontWeight: "700", color: "#374151", marginBottom: 10 },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: "#374151", marginBottom: 8 },
+  textInput: {
+    borderWidth: 1.5,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: "#111827",
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
   controls: { flexDirection: "row", gap: 10, marginTop: 16 },
   row: { flexDirection: "row", gap: 10, marginTop: 12 },
 });

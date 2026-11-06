@@ -3,13 +3,12 @@
 import os
 import tempfile
 import uuid
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
 
-from app.api.deps import get_database, get_engine, get_storage
+from app.api.deps import get_database, get_storage
 from app.services.database import SpeechDatabase
 from app.services.storage import R2Storage
 from app.core.config import get_settings
@@ -17,7 +16,6 @@ from app.models.schemas import (
     ErrorResponse,
     RecordingCreate,
     RecordingOut,
-    TranscribeResponse,
 )
 
 router = APIRouter()
@@ -45,42 +43,6 @@ def _validate_audio(file: UploadFile) -> str:
             ),
         )
     return ext
-
-
-@router.post(
-    "/transcribe",
-    response_model=TranscribeResponse,
-    responses={400: {"model": ErrorResponse}, 413: {"model": ErrorResponse}},
-)
-async def transcribe(
-    file: UploadFile = File(...),
-    language: Optional[str] = Form(default="om"),
-    engine=Depends(get_engine),
-):
-    """Transcribe an uploaded audio file using the configured ASR engine."""
-    ext = _validate_audio(file)
-
-    # Persist upload to a temp file so the ASR engine can read it by path.
-    suffix = ext or ".wav"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    try:
-        result = engine.transcribe(tmp_path, language=language)
-    finally:
-        # Always clean up the temp file; do not log audio content.
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-
-    return TranscribeResponse(
-        transcription=result.text,
-        language=result.language,
-        engine=result.engine,
-    )
 
 
 @router.post(

@@ -97,7 +97,7 @@ export default function RecordingsListScreen({ navigation }: { navigation: ListN
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <Text style={styles.title}>My Recordings</Text>
-        <Button title="New Recording" onPress={() => navigation.navigate("Record")} variant="outline" />
+        <Button title="New Recording" onPress={() => navigation.navigate("RecordCollect")} variant="outline" />
       </View>
       {recordings.length === 0 ? (
         <View style={styles.empty}>

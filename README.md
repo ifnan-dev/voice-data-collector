@@ -103,12 +103,14 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ### Transcription (manual only)
 
-This app does **not** perform automatic transcription. The user records audio and then types the Afaan Oromo transcription manually in the Review screen before saving. The `/api/transcribe` endpoint and Whisper integration have been removed so no system transcribes the audio.
+This app does **not** perform automatic transcription. No audio is transcribed by the system. The `/api/transcribe` endpoint and Whisper integration have been removed.
 
-The app works interchangeably in two directions:
+The app works interchangeably in two directions, and **both recording and transcription are optional**:
 
-1. **Audio → Text:** Record audio, then manually type the transcription in Review, then save.
-2. **Text → Audio:** On the Record screen, type the Afaan Oromo text first (optional preset), record audio for it, then save (the text is pre-filled in Review and can be edited).
+1. **Audio → Text:** Record audio as many times as you like on "Record Audio". Each recording goes into a local pending list (nothing is saved to the database yet). Later, pick a recording from the list, type the Afaan Oromo transcription manually (or leave it blank), and save. The audio is uploaded to R2 and a Supabase row is created with the same UUID.
+2. **Text → Audio:** Write as many sentences as you like on "Write Text". Each sentence goes into a local pending list. Later, pick a sentence, record audio for it, and save. The sentence is used as the transcription and the audio is uploaded to R2.
+
+Pending recordings and pending texts are kept locally until you explicitly save a paired audio+text to the database. Nothing is saved unless you press "Save Recording".
 
 ## Mobile setup
 
@@ -117,23 +119,6 @@ The app works interchangeably in two directions:
 ```bash
 cp mobile/.env.example mobile/.env
 ```
-
-2. Install dependencies:
-
-```bash
-cd mobile
-npm install
-```
-
-3. Run (Expo dev server):
-
-```bash
-npx expo start
-```
-
-Then press `a` for Android emulator / `i` for iOS simulator, or scan with the Expo Go app on a physical device.
-
-> **Note:** `expo-audio` has native code. For a physical device you need a development build (`npx expo run:android` or EAS). Expo Go includes only the bundled native modules; audio recording may require a dev build depending on your Expo SDK version.
 
 2. Install dependencies:
 

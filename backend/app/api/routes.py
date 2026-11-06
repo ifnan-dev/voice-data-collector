@@ -53,9 +53,9 @@ def _validate_audio(file: UploadFile) -> str:
 )
 async def create_recording(
     file: UploadFile = File(...),
-    transcription: str = Form(...),
+    transcription: str = Form(default=""),
     language: str = Form(default="om"),
-    duration_seconds: Optional[float] = Form(default=None),
+    duration_seconds: float | None = Form(default=None),
     database=Depends(get_database),
     storage=Depends(get_storage),
 ):

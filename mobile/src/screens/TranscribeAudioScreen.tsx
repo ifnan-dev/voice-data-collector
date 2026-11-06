@@ -1,26 +1,33 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, Alert, StatusBar, KeyboardAvoidingView, ScrollView, Platform,
+  View,
+  Text,
+  StyleSheet,
+  Alert,
+  StatusBar,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { StackNavigationProp } from "@react-navigation/stack";
 import type { RouteProp } from "@react-navigation/native";
 import type { RootStackParamList } from "../navigation/types";
-import { usePlayback } from "../hooks/usePlayback";
+import { pendingStore, type PendingRecording } from "../store/pendingStore";
 import { apiService } from "../services/api";
+import { usePlayback } from "../hooks/usePlayback";
 import { Button } from "../components/Button";
 import { TranscriptionEditor } from "../components/TranscriptionEditor";
 import { AudioPlayer } from "../components/AudioPlayer";
-import { LocalRecording } from "../types";
 
-type ReviewNavigationProp = StackNavigationProp<RootStackParamList, "Review">;
-type ReviewRouteProp = RouteProp<RootStackParamList, "Review">;
+type TranscribeNavigationProp = StackNavigationProp<RootStackParamList, "TranscribeAudio">;
+type TranscribeRouteProp = RouteProp<RootStackParamList, "TranscribeAudio">;
 
-export default function ReviewScreen() {
-  const navigation = useNavigation<ReviewNavigationProp>();
-  const route = useRoute<ReviewRouteProp>();
-  const { recording, transcription: initialTranscription = "" } = route.params;
-  const [transcription, setTranscription] = useState(initialTranscription);
+export default function TranscribeAudioScreen() {
+  const navigation = useNavigation<TranscribeNavigationProp>();
+  const route = useRoute<TranscribeRouteProp>();
+  const { recording } = route.params;
+  const [transcription, setTranscription] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -44,6 +51,7 @@ export default function ReviewScreen() {
         "om",
         recording.durationSeconds
       );
+      pendingStore.removeRecording(recording.id);
       setSaved(true);
       Alert.alert(
         "Saved",
@@ -79,16 +87,17 @@ export default function ReviewScreen() {
       <StatusBar barStyle="dark-content" />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Text style={styles.title}>Review Transcription</Text>
-          <Text style={styles.subtitle}>Enter the Afaan Oromo transcription manually</Text>
+          <Text style={styles.title}>Transcribe Audio</Text>
+          <Text style={styles.subtitle}>Type the Afaan Oromo transcription (optional)</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Audio</Text>
           <AudioPlayer uri={recording.uri} onPlaybackEnd={() => {}} />
+          <Text style={styles.hint}>{recording.durationSeconds.toFixed(1)} seconds</Text>
         </View>
 
-        <TranscriptionEditor value={transcription} onChangeText={setTranscription} />
+        <TranscriptionEditor value={transcription} onChangeText={setTranscription} placeholder="Type transcription here (leave blank if none)..." />
 
         {error && <View style={styles.alertError}><Text style={styles.errorText}>{error}</Text></View>}
 
@@ -112,6 +121,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 10, marginTop: 8 },
   alertError: { backgroundColor: "#fee2e2", borderRadius: 8, padding: 10, marginBottom: 12 },
   errorText: { fontSize: 13, color: "#dc2626" },
+  hint: { fontSize: 12, color: "#9ca3af", marginTop: 4 },
   success: { alignItems: "center", paddingVertical: 40 },
   successText: { fontSize: 18, fontWeight: "700", color: "#15803d", marginBottom: 16 },
 });

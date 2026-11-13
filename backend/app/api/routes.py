@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import get_database, get_storage
 from app.services.database import SpeechDatabase
-from app.services.storage import R2Storage
+from app.services.storage import SupabaseStorage
 from app.core.config import get_settings
 from app.models.schemas import (
     ErrorResponse,
@@ -59,10 +59,10 @@ async def create_recording(
     database=Depends(get_database),
     storage=Depends(get_storage),
 ):
-    """Upload audio to R2 and save the matching record to Supabase.
+    """Upload audio to Supabase Storage and save the matching record to Supabase.
 
     The UUID is generated server-side so the audio object path and the
-    database row share the same identifier. If either the R2 upload or the
+    database row share the same identifier. If either the Storage upload or the
     Supabase insert fails, an error is raised and the local temp file is
     preserved so nothing is silently lost.
     """
@@ -78,7 +78,7 @@ async def create_recording(
         tmp_path = tmp.name
 
     try:
-        # 1. Upload audio to R2.
+        # 1. Upload audio to Supabase Storage.
         try:
             storage.upload(tmp_path, recording_id, ext)
         except RuntimeError as exc:
@@ -98,7 +98,7 @@ async def create_recording(
                 duration_seconds=duration_seconds,
             )
         except Exception as exc:
-            # Insert failed: attempt to clean up the R2 object we just uploaded
+            # Insert failed: attempt to clean up the Storage object we just uploaded
             # so we don't orphan storage, then surface the error. The local
             # temp file is preserved so the user can retry.
             storage.delete(object_key)
@@ -170,7 +170,7 @@ async def get_recording_audio(
     database=Depends(get_database),
     storage=Depends(get_storage),
 ):
-    """Provide a temporary signed URL for private R2 audio playback."""
+    """Provide a temporary signed URL for private Supabase Storage audio playback."""
     try:
         record = database.get(recording_id)
     except Exception as exc:
@@ -184,32 +184,28 @@ async def get_recording_audio(
             detail=f"Recording {recording_id} not found",
         )
 
-    # Prefer a signed URL for private buckets; fall back to public URL if configured.
     try:
         signed_url = storage.get_signed_url(record.audio_path)
         return JSONResponse({"audio_url": signed_url, "expires_in": 3600})
-    except RuntimeError:
-        public_url = storage.public_url(record.audio_path)
-        if public_url:
-            return JSONResponse({"audio_url": public_url, "expires_in": None})
+    except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Unable to provide audio playback URL",
+            detail=f"Unable to provide audio playback URL: {exc}",
         )
 
 
 @router.get("/health")
 async def health():
-    r2 = False
-    supabase = False
+    storage_ok = False
+    supabase_ok = False
     try:
-        storage = R2Storage()
-        r2 = storage.health_check()
+        storage = SupabaseStorage()
+        storage_ok = storage.health_check()
     except Exception:
-        r2 = False
+        storage_ok = False
     try:
         database = SpeechDatabase()
-        supabase = database.health_check()
+        supabase_ok = database.health_check()
     except Exception:
-        supabase = False
-    return {"r2": r2, "supabase": supabase}
+        supabase_ok = False
+    return {"storage": storage_ok, "supabase": supabase_ok}

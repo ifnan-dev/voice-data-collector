@@ -8,8 +8,8 @@ A mobile application for collecting Afaan Oromo speech recordings and their corr
 - **Audio:** `expo-audio` (recording & playback)
 - **Backend:** Python + FastAPI
 - **Database:** Supabase PostgreSQL
-- **Audio storage:** Cloudflare R2 (S3-compatible, private bucket)
-- **Transcription:** Whisper via `faster-whisper` (modular, replaceable ASR engine)
+- **Audio storage:** Supabase Storage (private bucket, included in Supabase Spark plan — no credit card needed)
+- **Transcription:** Manual only (no auto-transcription)
 
 ## Project structure
 
@@ -21,11 +21,10 @@ Afan-oromo-dataset/
 │   │   ├── core/config.py        # Pydantic settings (.env)
 │   │   ├── models/schemas.py     # Pydantic request/response schemas
 │   │   ├── services/
-│   │   │   ├── transcription.py  # Pluggable ASR engine (whisper/stub/custom-asr)
-│   │   │   ├── storage.py        # Cloudflare R2 (S3) client
-│   │   │   └── database.py       # Supabase client
+│   │   │   ├── storage.py        # Supabase Storage client (replaces Cloudflare R2)
+│   │   │   └── database.py       # Supabase PostgreSQL client
 │   │   ├── api/
-│   │   │   ├── routes.py         # /api/transcribe, /api/recordings, ...
+│   │   │   ├── routes.py         # /api/recordings, /api/recordings/{id}, ...
 │   │   │   └── deps.py           # Service singletons
 │   │   └── ...
 │   ├── requirements.txt
@@ -36,42 +35,48 @@ Afan-oromo-dataset/
 │   │   ├── components/   # Button, TimerDisplay, AudioPlayer, TranscriptionEditor
 │   │   ├── hooks/        # useRecorder, usePlayback (expo-audio)
 │   │   ├── navigation/   # RootNavigator, param types
-│   │   ├── screens/      # RecordScreen, ReviewScreen, RecordingsListScreen, RecordingDetailsScreen
+│   │   ├── screens/      # RecordCollect, TextCollect, TranscribeAudio, RecordFromText, RecordingsList, RecordingDetails
 │   │   ├── services/     # api.ts (axios client), audio.ts (permissions)
+│   │   ├── store/        # pendingStore (local pending recordings/texts)
 │   │   └── types.ts
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── .env.example
 ├── sql/
-│   └── 001_create_speech_records.sql   # Supabase table + RLS
+│   └── 001_create_speech_records.sql   # Supabase table + RLS + storage bucket notes
 ├── README.md
 └── .gitignore
 ```
 
 ## Database setup (Supabase)
 
-Run `sql/001_create_speech_records.sql` against your Supabase PostgreSQL database. It:
+### 1. Create a Supabase project
+
+Go to https://app.supabase.com, create a new project (free Spark plan — no credit card required).
+
+### 2. Create the database table
+
+Run `sql/001_create_speech_records.sql` in the Supabase SQL Editor. It:
 
 1. Enables `pgcrypto` (for `gen_random_uuid()`).
-2. Creates the `speech_records` table matching the required schema.
-3. Adds an index on `created_at` for listing.
-4. Enables Row Level Security with a public read policy and a service-role insert policy.
+2. Creates the `speech_records` table.
+3. Adds an index on `created_at`.
+4. Enables Row Level Security with public read and service-role insert policies.
 
-```sql
--- executed via the Supabase SQL Editor
-\i sql/001_create_speech_records.sql
-```
+### 3. Create the Supabase Storage bucket
 
-The `speech_records` table:
+Go to **Storage → New Bucket** in the Supabase Dashboard:
+- Name: `speech-recordings`
+- Public: **OFF** (private bucket)
+- File size limit: 50 MB (or your preferred limit)
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID | PRIMARY KEY, `gen_random_uuid()` |
-| audio_path | TEXT | R2 object path, e.g. `recordings/<uuid>.m4a` |
-| transcription | TEXT | |
-| language | VARCHAR(10) | default `'om'` (Afaan Oromo) |
-| duration_seconds | FLOAT | |
-| created_at | TIMESTAMPTZ | default NOW() |
+The bucket name must match `SUPABASE_STORAGE_BUCKET` in `backend/.env`.
+
+### 4. Get your credentials
+
+Go to **Settings → API** and copy:
+- Project URL → `SUPABASE_URL`
+- `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
 
 ## Backend setup
 
@@ -84,9 +89,7 @@ cp backend/.env.example backend/.env
 Required (keep secret, backend only):
 
 - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — Supabase project credentials (service-role key).
-- `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` — Cloudflare R2 (S3) credentials.
-- `R2_ENDPOINT` — `https://<account-id>.r2.cloudflarestorage.com`
-- `R2_BUCKET` — private R2 bucket name.
+- `SUPABASE_STORAGE_BUCKET` — name of your private Supabase Storage bucket (e.g. `speech-recordings`).
 
 2. Install dependencies:
 
@@ -101,24 +104,20 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-### Transcription (manual only)
+### No automatic transcription
 
-This app does **not** perform automatic transcription. No audio is transcribed by the system. The `/api/transcribe` endpoint and Whisper integration have been removed.
-
-The app works interchangeably in two directions, and **both recording and transcription are optional**:
-
-1. **Audio → Text:** Record audio as many times as you like on "Record Audio". Each recording goes into a local pending list (nothing is saved to the database yet). Later, pick a recording from the list, type the Afaan Oromo transcription manually (or leave it blank), and save. The audio is uploaded to R2 and a Supabase row is created with the same UUID.
-2. **Text → Audio:** Write as many sentences as you like on "Write Text". Each sentence goes into a local pending list. Later, pick a sentence, record audio for it, and save. The sentence is used as the transcription and the audio is uploaded to R2.
-
-Pending recordings and pending texts are kept locally until you explicitly save a paired audio+text to the database. Nothing is saved unless you press "Save Recording".
+This app does **not** perform automatic transcription. The `/api/transcribe` endpoint and Whisper integration have been removed. Users manually type transcriptions before saving.
 
 ## Mobile setup
 
-1. Copy `mobile/.env.example` to `mobile/.env` and set `EXPO_PUBLIC_API_URL` to your backend (e.g. `http://localhost:8000` for local dev via emulator, or your machine's LAN IP for a physical device).
+1. Copy `mobile/.env.example` to `mobile/.env` and set `EXPO_PUBLIC_API_URL` to your backend:
 
 ```bash
 cp mobile/.env.example mobile/.env
 ```
+
+For local testing: `EXPO_PUBLIC_API_URL=http://127.0.0.1:8000`
+For physical device: use your computer's LAN IP (e.g. `http://192.168.1.42:8000`)
 
 2. Install dependencies:
 
@@ -127,33 +126,44 @@ cd mobile
 npm install
 ```
 
-3. Run (Expo dev server):
+3. Run:
 
 ```bash
 npx expo start
 ```
 
-Then press `a` for Android emulator / `i` for iOS simulator, or scan with the Expo Go app on a physical device.
+Press `a` for Android emulator, or scan with Expo Go on a device.
 
-> **Note:** `expo-audio` has native code. For a physical device you need a development build (`npx expo run:android` or EAS). Expo Go includes only the bundled native modules; audio recording may require a dev build depending on your Expo SDK version.
+> **Note:** `expo-audio` has native code. For a physical device you need a development build (`npx expo run:android` or EAS). Expo Go includes only bundled native modules; audio recording may require a dev build.
 
 ## API
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/recordings` | POST | Upload audio to R2 + save metadata and manual transcription to Supabase |
+| `/api/recordings` | POST | Upload audio to Supabase Storage + save metadata and manual transcription to Supabase |
 | `/api/recordings` | GET | List saved recordings (newest first) |
 | `/api/recordings/{id}` | GET | Get a single recording |
-| `/api/recordings/{id}/audio` | GET | Temporary signed URL for private R2 audio playback |
-| `/health` | GET | R2 + Supabase connectivity |
+| `/api/recordings/{id}/audio` | GET | Temporary signed URL for private Supabase Storage audio playback |
+| `/health` | GET | Supabase Storage + Supabase DB connectivity |
 | `/` | GET | Service info |
 
-All secret credentials (R2 keys, Supabase service-role key) live **only** on the backend. The mobile app never sees them.
+All secret credentials (Supabase service-role key) live **only** on the backend. The mobile app never sees them.
 
 ## Save-recording workflow
 
 1. The backend generates a UUID server-side.
-2. Audio is uploaded to R2 at `recordings/<uuid>.<ext>`.
+2. Audio is uploaded to Supabase Storage at `recordings/<uuid>.<ext>`.
 3. The same UUID + object path and the user's manual transcription are inserted into Supabase in one row.
-4. On R2 failure the error is surfaced and the local temp file is preserved.
-5. On Supabase failure the just-uploaded R2 object is deleted to avoid orphans, and the error is surfaced.
+4. On Storage upload failure the error is surfaced and the local temp file is preserved.
+5. On Supabase insert failure the just-uploaded Storage object is deleted to avoid orphans, and the error is surfaced.
+
+## Interchangeable workflow (recording + transcription both optional)
+
+1. **Audio → Text:** Record audio as many times as you like on "Record Audio". Each recording goes into a local pending list. Later, pick a recording, type the Afaan Oromo transcription manually (or leave blank), and save.
+2. **Text → Audio:** Write sentences on "Write Text". Pick a sentence, record audio for it, and save. The sentence is pre-filled as the transcription and can be edited.
+
+Pending recordings and texts are kept locally until you explicitly save a paired audio+text to the database. Nothing is saved unless you press "Save Recording".
+
+## License
+
+MIT

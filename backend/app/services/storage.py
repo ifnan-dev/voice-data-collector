@@ -76,7 +76,7 @@ class SupabaseStorage:
     def health_check(self) -> bool:
         """Return True if the storage bucket is accessible."""
         try:
-            self.client.storage.from_(self._bucket).list(limit=1)
+            self.client.storage.from_(self._bucket).list()
             return True
         except Exception:
             return False

@@ -7,7 +7,9 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
-    # Supabase (service-role key - keep secret, backend only)
+    # Supabase (backend only - keep secret)
+    # Accepts either the legacy service_role JWT key or a new sb_secret_... secret key.
+    # Both provide elevated privileges and bypass Row Level Security.
     supabase_url: str = ""
     supabase_service_role_key: str = ""
 

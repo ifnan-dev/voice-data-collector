@@ -26,7 +26,7 @@ CREATE POLICY "Allow public read access"
     ON speech_records FOR SELECT
     USING (true);
 
--- Policy: allow insert from service role only (backend uses service-role key)
+-- Policy: allow insert from service role / secret key only (backend uses elevated key)
 CREATE POLICY "Allow service role insert"
     ON speech_records FOR INSERT
     WITH CHECK (true);

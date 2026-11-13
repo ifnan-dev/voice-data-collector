@@ -88,7 +88,8 @@ cp backend/.env.example backend/.env
 
 Required (keep secret, backend only):
 
-- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — Supabase project credentials (service-role key).
+- `SUPABASE_URL` — Supabase project URL (`https://<project-ref>.supabase.co`).
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase elevated key. Use either the legacy `service_role` JWT key or a new `sb_secret_...` secret key. Both bypass Row Level Security and must stay backend-only.
 - `SUPABASE_STORAGE_BUCKET` — name of your private Supabase Storage bucket (e.g. `speech-recordings`).
 
 2. Install dependencies:

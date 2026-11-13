@@ -1,4 +1,9 @@
-"""Supabase PostgreSQL database service (service-role key, backend only)."""
+"""Supabase PostgreSQL database service (backend only).
+
+Uses either the legacy service_role key or a new sb_secret_... secret key.
+Both provide elevated privileges and bypass Row Level Security.
+The key must never be exposed to the mobile app.
+"""
 
 from datetime import datetime
 from typing import Optional

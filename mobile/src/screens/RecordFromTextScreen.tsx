@@ -57,17 +57,17 @@ export default function RecordFromTextScreen() {
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds((s) => s + 0.1), 100);
     } else if (status === "recording") {
-      await stop();
+      const result = await stop();
       if (timerRef.current) clearInterval(timerRef.current);
-      if (uri) {
-        setLocalRecording({ uri, durationSeconds: durationSeconds ?? 0, mimeType: "audio/m4a" });
-        setSeconds(durationSeconds ?? 0);
+      if (result?.uri) {
+        setLocalRecording({ uri: result.uri, durationSeconds: result.durationSeconds, mimeType: "audio/m4a" });
+        setSeconds(result.durationSeconds);
       }
     } else if (status === "paused") {
       await resume();
       timerRef.current = setInterval(() => setSeconds((s) => s + 0.1), 100);
     }
-  }, [status, start, stop, resume, uri, durationSeconds]);
+  }, [status, start, stop, resume]);
 
   const handleSave = useCallback(async () => {
     if (!localRecording || !text) return;

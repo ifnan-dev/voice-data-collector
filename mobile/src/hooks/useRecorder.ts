@@ -72,12 +72,14 @@ export function useRecorder() {
     }
   }, [recorder, checkPermission]);
 
-  const stop = useCallback(async () => {
+  const stop = useCallback(async (): Promise<{ uri: string | null; durationSeconds: number } | null> => {
     try {
       await recorder.stop();
       setStatus("idle");
+      return { uri: recorder.uri, durationSeconds: recorder.currentTime ?? 0 };
     } catch (e: any) {
       setError(e?.message ?? "Failed to stop recording");
+      return null;
     }
   }, [recorder]);
 

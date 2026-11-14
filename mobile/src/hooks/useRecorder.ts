@@ -75,8 +75,10 @@ export function useRecorder() {
   const stop = useCallback(async (): Promise<{ uri: string | null; durationSeconds: number } | null> => {
     try {
       await recorder.stop();
+      const recordingUri = recorder.uri;
+      const durationSeconds = recorder.currentTime ?? 0;
       setStatus("idle");
-      return { uri: recorder.uri, durationSeconds: recorder.currentTime ?? 0 };
+      return { uri: recordingUri, durationSeconds };
     } catch (e: any) {
       setError(e?.message ?? "Failed to stop recording");
       return null;

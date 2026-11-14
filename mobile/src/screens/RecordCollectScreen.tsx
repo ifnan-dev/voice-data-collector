@@ -58,6 +58,7 @@ export default function RecordCollectScreen() {
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds((s) => s + 0.1), 100);
     } else if (status === "recording") {
+      Alert.alert("Stop pressed", "Stop handler called");
       const result = await stop();
       if (timerRef.current) clearInterval(timerRef.current);
       if (result?.uri) {

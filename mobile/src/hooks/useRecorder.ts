@@ -74,7 +74,11 @@ export function useRecorder() {
 
   const stop = useCallback(async (): Promise<{ uri: string | null; durationSeconds: number } | null> => {
     try {
-      await recorder.stop();
+      const stopPromise = recorder.stop();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Recording stop timed out")), 5000)
+      );
+      await Promise.race([stopPromise, timeoutPromise]);
       const recordingUri = recorder.uri;
       const durationSeconds = recorder.currentTime ?? 0;
       setStatus("idle");

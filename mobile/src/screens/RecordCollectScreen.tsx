@@ -20,6 +20,109 @@ import { LocalRecording } from "../types";
 
 type RecordCollectNavigationProp = StackNavigationProp<RootStackParamList, "RecordCollect">;
 
+type RecordHeaderProps = {
+  permission: boolean | null;
+  error: string | null;
+  transcribeError: string | null;
+  isRecording: boolean;
+  status: "idle" | "recording" | "paused";
+  seconds: number;
+  localRecording: LocalRecording | null;
+  recordings: PendingRecording[];
+  onCheckPermission: () => void;
+  onStart: () => void;
+  onStop: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  onSaveRecording: () => void;
+  onReRecord: () => void;
+  onTranscribe: (recording: PendingRecording) => void;
+  onDeleteRecording: (id: string) => void;
+  navigation: RecordCollectNavigationProp;
+};
+
+const RecordHeader = function RecordHeader({
+  permission, error, transcribeError, isRecording, status, seconds,
+  localRecording, recordings,
+  onCheckPermission, onStart, onStop, onPause, onResume,
+  onSaveRecording, onReRecord, onTranscribe, onDeleteRecording,
+  navigation,
+}: RecordHeaderProps) {
+  return (
+    <>
+      <StatusBar barStyle="dark-content" />
+      <View style={styles.header}>
+        <Text style={styles.title}>Record Audio</Text>
+        <Text style={styles.subtitle}>
+          Record as many times as you like. Transcription is optional.
+        </Text>
+      </View>
+
+      {permission === false && (
+        <View style={styles.alert}>
+          <Text style={styles.alertText}>
+            Microphone permission denied. Enable it in device settings to record.
+          </Text>
+        </View>
+      )}
+      {error && <View style={styles.alertError}><Text style={styles.errorText}>{error}</Text></View>}
+      {transcribeError && <View style={styles.alertError}><Text style={styles.errorText}>{transcribeError}</Text></View>}
+
+      <View style={styles.card}>
+        <TimerDisplay seconds={seconds} />
+        <View style={styles.controls}>
+          {!isRecording && status === "idle" ? (
+            <Button
+              title={permission === false ? "Grant Microphone Permission" : "Start Recording"}
+              onPress={permission === false ? onCheckPermission : onStart}
+              variant="primary"
+              disabled={permission === false}
+            />
+          ) : isRecording ? (
+            <>
+              <Button title="Pause" onPress={onPause} variant="outline" />
+              <Button title="Stop Recording" onPress={onStop} variant="danger" />
+            </>
+          ) : (
+            <Button title="Resume" onPress={onResume} variant="primary" />
+          )}
+        </View>
+        {localRecording && (
+          <View style={styles.pendingLocal}>
+            <Text style={styles.sectionTitle}>Latest recording (not yet saved)</Text>
+            <AudioPlayer uri={localRecording.uri} />
+            <View style={styles.row}>
+              <Button title="Discard" onPress={onReRecord} variant="outline" />
+              <Button title="Save to List" onPress={onSaveRecording} variant="primary" />
+            </View>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.listHeader}>
+          <Text style={styles.sectionTitle}>Recorded Audios ({recordings.length})</Text>
+          <Button title="Clear All" onPress={() => pendingStore.clearRecordings()} variant="outline" size="small" />
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Next step</Text>
+        <View style={styles.row}>
+          <Button title="Transcribe an Audio" onPress={() => {
+            if (recordings.length === 0) {
+              Alert.alert("No recordings", "Record some audio first.");
+              return;
+            }
+            onTranscribe(recordings[0]);
+          }} variant="primary" />
+          <Button title="Write Text Instead" onPress={() => navigation.navigate("TextCollect")} variant="outline" />
+        </View>
+      </View>
+    </>
+  );
+}
+
 export default function RecordCollectScreen() {
   const navigation = useNavigation<RecordCollectNavigationProp>();
   const {
@@ -58,7 +161,6 @@ export default function RecordCollectScreen() {
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds((s) => s + 0.1), 100);
     } else if (status === "recording") {
-      Alert.alert("Stop pressed", "Stop handler called");
       const result = await stop();
       if (timerRef.current) clearInterval(timerRef.current);
       if (result?.uri) {
@@ -129,91 +231,38 @@ export default function RecordCollectScreen() {
 
   const keyExtractor = (item: PendingRecording) => item.id;
 
-  const listHeader = () => (
-    <>
-      <StatusBar barStyle="dark-content" />
-      <View style={styles.header}>
-        <Text style={styles.title}>Record Audio</Text>
-        <Text style={styles.subtitle}>
-          Record as many times as you like. Transcription is optional.
-        </Text>
-      </View>
-
-      {permission === false && (
-        <View style={styles.alert}>
-          <Text style={styles.alertText}>
-            Microphone permission denied. Enable it in device settings to record.
-          </Text>
-        </View>
-      )}
-      {error && <View style={styles.alertError}><Text style={styles.errorText}>{error}</Text></View>}
-      {transcribeError && <View style={styles.alertError}><Text style={styles.errorText}>{transcribeError}</Text></View>}
-
-      <View style={styles.card}>
-        <TimerDisplay seconds={seconds} />
-        <View style={styles.controls}>
-          {!isRecording && status === "idle" ? (
-            <Button
-              title={permission === false ? "Grant Microphone Permission" : "Start Recording"}
-              onPress={permission === false ? checkPermission : handleRecordPress}
-              variant="primary"
-              disabled={permission === false}
-            />
-          ) : isRecording ? (
-            <>
-              <Button title="Pause" onPress={pause} variant="outline" />
-              <Button title="Stop Recording" onPress={handleRecordPress} variant="danger" />
-            </>
-          ) : (
-            <Button title="Resume" onPress={handleRecordPress} variant="primary" />
-          )}
-        </View>
-        {localRecording && (
-          <View style={styles.pendingLocal}>
-            <Text style={styles.sectionTitle}>Latest recording (not yet saved)</Text>
-            <AudioPlayer uri={localRecording.uri} />
-            <View style={styles.row}>
-              <Button title="Discard" onPress={handleReRecord} variant="outline" />
-              <Button title="Save to List" onPress={handleSaveRecording} variant="primary" />
-            </View>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.listHeader}>
-          <Text style={styles.sectionTitle}>Recorded Audios ({recordings.length})</Text>
-          <Button title="Clear All" onPress={() => pendingStore.clearRecordings()} variant="outline" size="small" />
-        </View>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Next step</Text>
-        <View style={styles.row}>
-          <Button title="Transcribe an Audio" onPress={() => {
-            if (recordings.length === 0) {
-              Alert.alert("No recordings", "Record some audio first.");
-              return;
-            }
-            navigation.navigate("TranscribeAudio", { recording: recordings[0] });
-          }} variant="primary" />
-          <Button title="Write Text Instead" onPress={() => navigation.navigate("TextCollect")} variant="outline" />
-        </View>
-      </View>
-    </>
-  );
-
   return (
-    <FlatList
-      data={recordings}
-      renderItem={renderItem}
-      keyExtractor={keyExtractor}
-      ListHeaderComponent={listHeader}
-      contentContainerStyle={{ paddingBottom: 16 }}
-      ListEmptyComponent={
-        <Text style={styles.empty}>No recordings yet. Record some audio above.</Text>
-      }
-    />
+    <>
+      <RecordHeader
+        permission={permission}
+        error={error}
+        transcribeError={transcribeError}
+        isRecording={isRecording}
+        status={status}
+        seconds={seconds}
+        localRecording={localRecording}
+        recordings={recordings}
+        onCheckPermission={checkPermission}
+        onStart={handleRecordPress}
+        onStop={handleRecordPress}
+        onPause={pause}
+        onResume={handleRecordPress}
+        onSaveRecording={handleSaveRecording}
+        onReRecord={handleReRecord}
+        onTranscribe={(recording: PendingRecording) => handleTranscribe(recording)}
+        onDeleteRecording={handleDeleteRecording}
+        navigation={navigation}
+      />
+      <FlatList
+        data={recordings}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        contentContainerStyle={{ paddingBottom: 16 }}
+        ListEmptyComponent={
+          <Text style={styles.empty}>No recordings yet. Record some audio above.</Text>
+        }
+      />
+    </>
   );
 }
 

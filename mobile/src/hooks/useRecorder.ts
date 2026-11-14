@@ -84,6 +84,7 @@ export function useRecorder() {
       setStatus("idle");
       return { uri: recordingUri, durationSeconds };
     } catch (e: any) {
+      setStatus("idle");
       setError(e?.message ?? "Failed to stop recording");
       return null;
     }

@@ -5,9 +5,8 @@ import {
   StyleSheet,
   Alert,
   StatusBar,
-  ScrollView,
-  TouchableOpacity,
   FlatList,
+  TouchableOpacity,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { StackNavigationProp } from "@react-navigation/stack";
@@ -129,8 +128,8 @@ export default function RecordCollectScreen() {
 
   const keyExtractor = (item: PendingRecording) => item.id;
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+  const listHeader = () => (
+    <>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <Text style={styles.title}>Record Audio</Text>
@@ -185,16 +184,6 @@ export default function RecordCollectScreen() {
           <Text style={styles.sectionTitle}>Recorded Audios ({recordings.length})</Text>
           <Button title="Clear All" onPress={() => pendingStore.clearRecordings()} variant="outline" size="small" />
         </View>
-        {recordings.length === 0 ? (
-          <Text style={styles.empty}>No recordings yet. Record some audio above.</Text>
-        ) : (
-          <FlatList
-            data={recordings}
-            renderItem={renderItem}
-            keyExtractor={keyExtractor}
-            contentContainerStyle={{ paddingBottom: 16 }}
-          />
-        )}
       </View>
 
       <View style={styles.card}>
@@ -210,13 +199,24 @@ export default function RecordCollectScreen() {
           <Button title="Write Text Instead" onPress={() => navigation.navigate("TextCollect")} variant="outline" />
         </View>
       </View>
-    </ScrollView>
+    </>
+  );
+
+  return (
+    <FlatList
+      data={recordings}
+      renderItem={renderItem}
+      keyExtractor={keyExtractor}
+      ListHeaderComponent={listHeader}
+      contentContainerStyle={{ paddingBottom: 16 }}
+      ListEmptyComponent={
+        <Text style={styles.empty}>No recordings yet. Record some audio above.</Text>
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f9fafb" },
-  content: { padding: 16 },
   header: { alignItems: "center", marginVertical: 12 },
   title: { fontSize: 26, fontWeight: "800", color: "#111827" },
   subtitle: { fontSize: 14, color: "#6b7280", marginTop: 4, textAlign: "center" },
@@ -235,5 +235,5 @@ const styles = StyleSheet.create({
   itemLeft: { flex: 1, marginRight: 10 },
   itemDuration: { fontSize: 12, color: "#6b7280", marginTop: 4 },
   itemRight: { gap: 6 },
-  empty: { fontSize: 14, color: "#9ca3af", textAlign: "center", marginVertical: 16 },
+  empty: { fontSize: 14, color: "#9ca3af", textAlign: "center", marginVertical: 16, paddingHorizontal: 16 },
 });

@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   StatusBar,
-  ScrollView,
   TextInput,
   FlatList,
   TouchableOpacity,
@@ -72,8 +71,8 @@ export default function TextCollectScreen() {
 
   const keyExtractor = (item: PendingText) => item.id;
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+  const listHeader = () => (
+    <>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <Text style={styles.title}>Write Text</Text>
@@ -107,11 +106,6 @@ export default function TextCollectScreen() {
           <Text style={styles.sectionTitle}>Saved Sentences ({texts.length})</Text>
           <Button title="Clear All" onPress={() => pendingStore.clearTexts()} variant="outline" size="small" />
         </View>
-        {texts.length === 0 ? (
-          <Text style={styles.empty}>No sentences yet. Type some text above.</Text>
-        ) : (
-          <FlatList data={texts} renderItem={renderItem} keyExtractor={keyExtractor} contentContainerStyle={{ paddingBottom: 16 }} />
-        )}
       </View>
 
       <View style={styles.card}>
@@ -127,13 +121,24 @@ export default function TextCollectScreen() {
           <Button title="Record Audio Instead" onPress={() => navigation.navigate("RecordCollect")} variant="outline" />
         </View>
       </View>
-    </ScrollView>
+    </>
+  );
+
+  return (
+    <FlatList
+      data={texts}
+      renderItem={renderItem}
+      keyExtractor={keyExtractor}
+      ListHeaderComponent={listHeader}
+      contentContainerStyle={{ paddingBottom: 16 }}
+      ListEmptyComponent={
+        <Text style={styles.empty}>No sentences yet. Type some text above.</Text>
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f9fafb" },
-  content: { padding: 16 },
   header: { alignItems: "center", marginVertical: 12 },
   title: { fontSize: 26, fontWeight: "800", color: "#111827" },
   subtitle: { fontSize: 14, color: "#6b7280", marginTop: 4, textAlign: "center" },
@@ -158,5 +163,5 @@ const styles = StyleSheet.create({
   itemText: { fontSize: 15, fontWeight: "600", color: "#111827" },
   itemMeta: { fontSize: 12, color: "#6b7280", marginTop: 4 },
   itemRight: { gap: 6 },
-  empty: { fontSize: 14, color: "#9ca3af", textAlign: "center", marginVertical: 16 },
+  empty: { fontSize: 14, color: "#9ca3af", textAlign: "center", marginVertical: 16, paddingHorizontal: 16 },
 });

@@ -27,7 +27,7 @@ export default function RecordFromTextScreen() {
   const route = useRoute<RecordFromTextRouteProp>();
   const { text, textId } = route.params;
   const {
-    status, permission, error, isRecording, uri, durationSeconds,
+    status, permission, error, isRecording,
     start, stop, pause, resume, checkPermission,
   } = useRecorder();
   const [localRecording, setLocalRecording] = useState<LocalRecording | null>(null);

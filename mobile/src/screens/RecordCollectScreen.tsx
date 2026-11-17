@@ -5,285 +5,435 @@ import {
   StyleSheet,
   Alert,
   StatusBar,
-  FlatList,
   TouchableOpacity,
+  TextInput,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { StackNavigationProp } from "@react-navigation/stack";
 import type { RootStackParamList } from "../navigation/types";
 import { useRecorder } from "../hooks/useRecorder";
-import { pendingStore, type PendingRecording } from "../store/pendingStore";
-import { Button } from "../components/Button";
-import { TimerDisplay } from "../components/TimerDisplay";
-import { AudioPlayer } from "../components/AudioPlayer";
-import { LocalRecording } from "../types";
+import { usePlayback } from "../hooks/usePlayback";
+import { apiService } from "../services/api";
+import { AudioRow } from "../components/AudioRow";
+import { StatusStepper, BLUE_PRIMARY } from "../components/StatusStepper";
 
-type RecordCollectNavigationProp = StackNavigationProp<RootStackParamList, "RecordCollect">;
+type RecordCollectNavigationProp = StackNavigationProp<
+  RootStackParamList,
+  "RecordCollect"
+>;
 
-type RecordHeaderProps = {
-  permission: boolean | null;
-  error: string | null;
-  transcribeError: string | null;
-  isRecording: boolean;
-  status: "idle" | "recording" | "paused";
-  seconds: number;
-  localRecording: LocalRecording | null;
-  recordings: PendingRecording[];
-  onCheckPermission: () => void;
-  onStart: () => void;
-  onStop: () => void;
-  onPause: () => void;
-  onResume: () => void;
-  onSaveRecording: () => void;
-  onReRecord: () => void;
-  onTranscribe: (recording: PendingRecording) => void;
-  onDeleteRecording: (id: string) => void;
-  navigation: RecordCollectNavigationProp;
-};
+const MIN_DURATION_SECONDS = 3;
+const ORANGE_SOFT = "#FDBA74";
+const TICK_MS = 250;
 
-const RecordHeader = function RecordHeader({
-  permission, error, transcribeError, isRecording, status, seconds,
-  localRecording, recordings,
-  onCheckPermission, onStart, onStop, onPause, onResume,
-  onSaveRecording, onReRecord, onTranscribe, onDeleteRecording,
-  navigation,
-}: RecordHeaderProps) {
-  return (
-    <>
-      <StatusBar barStyle="dark-content" />
-      <View style={styles.header}>
-        <Text style={styles.title}>Record Audio</Text>
-        <Text style={styles.subtitle}>
-          Record as many times as you like. Transcription is optional.
-        </Text>
-      </View>
-
-      {permission === false && (
-        <View style={styles.alert}>
-          <Text style={styles.alertText}>
-            Microphone permission denied. Enable it in device settings to record.
-          </Text>
-        </View>
-      )}
-      {error && <View style={styles.alertError}><Text style={styles.errorText}>{error}</Text></View>}
-      {transcribeError && <View style={styles.alertError}><Text style={styles.errorText}>{transcribeError}</Text></View>}
-
-      <View style={styles.card}>
-        <TimerDisplay seconds={seconds} />
-        <View style={styles.controls}>
-          {!isRecording && status === "idle" ? (
-            <Button
-              title={permission === false ? "Grant Microphone Permission" : "Start Recording"}
-              onPress={permission === false ? onCheckPermission : onStart}
-              variant="primary"
-              disabled={permission === false}
-            />
-          ) : isRecording ? (
-            <>
-              <Button title="Pause" onPress={onPause} variant="outline" />
-              <Button title="Stop Recording" onPress={onStop} variant="danger" />
-            </>
-          ) : (
-            <Button title="Resume" onPress={onResume} variant="primary" />
-          )}
-        </View>
-        {localRecording && (
-          <View style={styles.pendingLocal}>
-            <Text style={styles.sectionTitle}>Latest recording (not yet saved)</Text>
-            <AudioPlayer uri={localRecording.uri} />
-            <View style={styles.row}>
-              <Button title="Discard" onPress={onReRecord} variant="outline" />
-              <Button title="Save to List" onPress={onSaveRecording} variant="primary" />
-            </View>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.listHeader}>
-          <Text style={styles.sectionTitle}>Recorded Audios ({recordings.length})</Text>
-          <Button title="Clear All" onPress={() => pendingStore.clearRecordings()} variant="outline" size="small" />
-        </View>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Next step</Text>
-        <View style={styles.row}>
-          <Button title="Transcribe an Audio" onPress={() => {
-            if (recordings.length === 0) {
-              Alert.alert("No recordings", "Record some audio first.");
-              return;
-            }
-            onTranscribe(recordings[0]);
-          }} variant="primary" />
-          <Button title="Write Text Instead" onPress={() => navigation.navigate("TextCollect")} variant="outline" />
-        </View>
-      </View>
-    </>
-  );
+function formatClock(seconds: number) {
+  const total = Math.max(0, Math.floor(seconds || 0));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 export default function RecordCollectScreen() {
   const navigation = useNavigation<RecordCollectNavigationProp>();
-  const {
-    status, permission, error, isRecording, uri, durationSeconds,
-    start, stop, pause, resume, checkPermission,
-  } = useRecorder();
-  const [recordings, setRecordings] = useState<PendingRecording[]>([]);
-  const [localRecording, setLocalRecording] = useState<LocalRecording | null>(null);
-  const [transcribeError, setTranscribeError] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [seconds, setSeconds] = useState(0);
+  const { status, permission, error, start, stop, checkPermission, clearError } =
+    useRecorder();
+  const { playing, loading, play, stop: stopPlayback } = usePlayback();
+
+  const [transcription, setTranscription] = useState("");
+  const [savedUri, setSavedUri] = useState<string | null>(null);
+  const [savedDuration, setSavedDuration] = useState(0);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordStartRef = useRef(0);
+  const holdingRef = useRef(false);
+  const busyRef = useRef(false);
+
+  const isRecording = status === "recording";
+  const hasRecording = savedUri !== null;
+  const isTranscribed = transcription.trim().length > 0;
+  const canUpload = hasRecording && isTranscribed && !uploading;
+
+  const stopTicker = useCallback(() => {
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    const unsub = pendingStore.subscribe(() => setRecordings(pendingStore.getRecordings()));
-    setRecordings(pendingStore.getRecordings());
-    return unsub;
-  }, []);
+    checkPermission();
+  }, [checkPermission]);
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      stopTicker();
     };
-  }, []);
+  }, [stopTicker]);
 
-  useEffect(() => {
-    const init = async () => {
-      await checkPermission();
-    };
-    init();
-  }, [checkPermission]);
+  const startTicker = useCallback(() => {
+    stopTicker();
+    recordStartRef.current = Date.now();
+    setRecordingSeconds(0);
+    // Derive elapsed time from the clock instead of accumulating +0.1 per
+    // tick: accumulation drifts, and 10 setStates/second re-render the screen.
+    tickRef.current = setInterval(() => {
+      setRecordingSeconds((Date.now() - recordStartRef.current) / 1000);
+    }, TICK_MS);
+  }, [stopTicker]);
 
-  const handleRecordPress = useCallback(async () => {
-    setTranscribeError(null);
-    if (status === "idle") {
-      await start();
-      setSeconds(0);
-      timerRef.current = setInterval(() => setSeconds((s) => s + 0.1), 100);
-    } else if (status === "recording") {
-      const result = await stop();
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (result?.uri) {
-        setLocalRecording({ uri: result.uri, durationSeconds: result.durationSeconds, mimeType: "audio/m4a" });
-        setSeconds(result.durationSeconds);
+  const handleStartRecording = useCallback(async () => {
+    if (holdingRef.current || busyRef.current || permission === false) return;
+    holdingRef.current = true;
+    busyRef.current = true;
+    try {
+      stopPlayback();
+      clearError();
+      setUploadError(null);
+      setSubmitted(false);
+      setSavedUri(null);
+      setSavedDuration(0);
+      const started = await start();
+      if (!started) {
+        holdingRef.current = false;
+        return;
       }
-    } else if (status === "paused") {
-      await resume();
-      timerRef.current = setInterval(() => setSeconds((s) => s + 0.1), 100);
+      startTicker();
+    } finally {
+      busyRef.current = false;
     }
-  }, [status, start, stop, resume]);
+  }, [permission, start, startTicker, stopPlayback, clearError]);
 
-  const handleSaveRecording = useCallback(() => {
-    if (!localRecording) return;
-    pendingStore.addRecording({
-      uri: localRecording.uri,
-      durationSeconds: localRecording.durationSeconds,
-      mimeType: localRecording.mimeType,
-    });
-    setLocalRecording(null);
-    setSeconds(0);
-    setTranscribeError(null);
-  }, [localRecording]);
+  const handleStopRecording = useCallback(async () => {
+    if (!holdingRef.current || busyRef.current) return;
+    const heldSeconds = (Date.now() - recordStartRef.current) / 1000;
+    holdingRef.current = false;
+    busyRef.current = true;
+    stopTicker();
+    try {
+      const result = await stop();
+      if (!result?.uri) {
+        setRecordingSeconds(0);
+        return;
+      }
+      // Trust the longest of the measurements: some devices report a short or
+      // zero native duration right after stop(), which discarded valid takes.
+      const finalSeconds = Math.max(result.durationSeconds, heldSeconds);
+      if (finalSeconds < MIN_DURATION_SECONDS) {
+        setRecordingSeconds(0);
+        Alert.alert(
+          "Recording discarded",
+          `Recordings under ${MIN_DURATION_SECONDS} seconds are automatically discarded.`,
+        );
+        return;
+      }
+      setSavedUri(result.uri);
+      setSavedDuration(finalSeconds);
+      setRecordingSeconds(finalSeconds);
+    } finally {
+      busyRef.current = false;
+    }
+  }, [stop, stopTicker]);
 
-  const handleReRecord = useCallback(() => {
-    setLocalRecording(null);
-    setSeconds(0);
-    setTranscribeError(null);
+  const handleDeleteRecording = useCallback(() => {
+    stopPlayback();
+    setSavedUri(null);
+    setSavedDuration(0);
+    setRecordingSeconds(0);
+    setSubmitted(false);
+    setUploadError(null);
+  }, [stopPlayback]);
+
+  const handleTogglePlay = useCallback(() => {
+    if (!savedUri) return;
+    if (playing) {
+      stopPlayback();
+      return;
+    }
+    play(savedUri);
+  }, [savedUri, playing, play, stopPlayback]);
+
+  const resetForm = useCallback(() => {
+    setTranscription("");
+    setSavedUri(null);
+    setSavedDuration(0);
+    setRecordingSeconds(0);
+    setSubmitted(false);
   }, []);
 
-  const handleTranscribe = (recording: PendingRecording) => {
-    navigation.navigate("TranscribeAudio", { recording });
-  };
+  const handleUpload = useCallback(async () => {
+    if (!savedUri || !hasRecording) {
+      Alert.alert("No recording", "Record audio first.");
+      return;
+    }
+    if (!isTranscribed) {
+      Alert.alert(
+        "Transcription required",
+        "Write the Afaan Oromo transcription before uploading.",
+      );
+      return;
+    }
+    stopPlayback();
+    setUploading(true);
+    setUploadError(null);
+    try {
+      await apiService.saveRecording(
+        savedUri,
+        `recording-${Date.now()}.m4a`,
+        "audio/m4a",
+        transcription.trim(),
+        "om",
+        savedDuration,
+      );
+      setSubmitted(true);
+      Alert.alert("Uploaded", "Recording uploaded successfully.", [
+        { text: "OK", onPress: resetForm },
+      ]);
+    } catch (e: any) {
+      setUploadError(e?.message ?? "Failed to upload recording");
+    } finally {
+      setUploading(false);
+    }
+  }, [
+    savedUri,
+    isTranscribed,
+    transcription,
+    savedDuration,
+    stopPlayback,
+    resetForm,
+  ]);
 
-  const handleDeleteRecording = (id: string) => {
-    pendingStore.removeRecording(id);
-  };
-
-  const renderItem = ({ item }: { item: PendingRecording }) => (
-    <TouchableOpacity
-      style={styles.item}
-      onPress={() => handleTranscribe(item)}
-    >
-      <View style={styles.itemBody}>
-        <View style={styles.itemLeft}>
-          <AudioPlayer uri={item.uri} showControls={false} />
-          <Text style={styles.itemDuration}>
-            {item.durationSeconds.toFixed(1)}s
-          </Text>
-        </View>
-        <View style={styles.itemRight}>
-          <Button
-            title="Transcribe"
-            onPress={() => handleTranscribe(item)}
-            variant="outline"
-            size="small"
-          />
-          <Button
-            title="Delete"
-            onPress={() => handleDeleteRecording(item.id)}
-            variant="danger"
-            size="small"
-          />
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const keyExtractor = (item: PendingRecording) => item.id;
+  const displayedSeconds = hasRecording ? savedDuration : recordingSeconds;
+  const recordHint = isRecording
+    ? formatClock(recordingSeconds)
+    : hasRecording
+      ? "Hold again to re-record"
+      : "Hold the microphone for recording";
+  const headerError = error ?? uploadError;
 
   return (
-    <>
-      <RecordHeader
-        permission={permission}
-        error={error}
-        transcribeError={transcribeError}
-        isRecording={isRecording}
-        status={status}
-        seconds={seconds}
-        localRecording={localRecording}
-        recordings={recordings}
-        onCheckPermission={checkPermission}
-        onStart={handleRecordPress}
-        onStop={handleRecordPress}
-        onPause={pause}
-        onResume={handleRecordPress}
-        onSaveRecording={handleSaveRecording}
-        onReRecord={handleReRecord}
-        onTranscribe={(recording: PendingRecording) => handleTranscribe(recording)}
-        onDeleteRecording={handleDeleteRecording}
-        navigation={navigation}
-      />
-      <FlatList
-        data={recordings}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        contentContainerStyle={{ paddingBottom: 16 }}
-        ListEmptyComponent={
-          <Text style={styles.empty}>No recordings yet. Record some audio above.</Text>
-        }
-      />
-    </>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      style={styles.container}
+    >
+      <StatusBar barStyle="dark-content" />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
+      >
+        <Text style={styles.title}>Sound Recording</Text>
+
+        {permission === false && (
+          <View style={styles.alertWarning}>
+            <Text style={styles.alertWarningText}>
+              Microphone permission denied. Enable it in device settings to
+              record.
+            </Text>
+          </View>
+        )}
+        {headerError && (
+          <View style={styles.alertError}>
+            <Text style={styles.alertErrorText}>{headerError}</Text>
+          </View>
+        )}
+
+        {/* Transcription input */}
+        <Text style={styles.label}>Transcription</Text>
+        <TextInput
+          style={styles.input}
+          value={transcription}
+          onChangeText={setTranscription}
+          placeholder="Write the Afaan Oromo transcription here..."
+          placeholderTextColor="#9CA3AF"
+          multiline
+          textAlignVertical="top"
+          autoCorrect={false}
+          editable={!uploading}
+        />
+        <View style={styles.infoNote}>
+          <Text style={styles.infoNoteText}>
+            Please seera qubee afaan oromoo eeggachuun barreessuu hin dagatinaa
+          </Text>
+        </View>
+
+        <StatusStepper
+          voiceRecorded={hasRecording}
+          transcribed={isTranscribed}
+          submitted={submitted}
+        />
+
+        <AudioRow
+          hasRecording={hasRecording}
+          playing={playing}
+          loading={loading}
+          seconds={displayedSeconds}
+          onTogglePlay={handleTogglePlay}
+          onDelete={handleDeleteRecording}
+        />
+
+        <View style={styles.recordArea}>
+          <Text
+            style={[styles.recordHint, isRecording && styles.recordHintActive]}
+          >
+            {recordHint}
+          </Text>
+
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={[
+              styles.recordButton,
+              isRecording && styles.recordButtonActive,
+              permission === false && styles.disabled,
+            ]}
+            onPressIn={handleStartRecording}
+            onPressOut={handleStopRecording}
+            disabled={permission === false}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isRecording ? "Stop recording" : "Hold to record"
+            }
+          >
+            <Ionicons
+              name="mic"
+              size={40}
+              color={isRecording ? "#DC2626" : "#4B5563"}
+            />
+          </TouchableOpacity>
+
+          <Text style={styles.warningText}>
+            Recordings under {MIN_DURATION_SECONDS} seconds are discarded
+            automatically.
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.uploadButton, !canUpload && styles.disabled]}
+          onPress={handleUpload}
+          disabled={!canUpload}
+          accessibilityRole="button"
+        >
+          {uploading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="cloud-upload-outline" size={20} color="#fff" />
+              <Text style={styles.uploadButtonText}>Upload</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.secondaryLink}
+          onPress={() => navigation.navigate("TextCollect")}
+        >
+          <Text style={styles.secondaryLinkText}>Write text instead</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { alignItems: "center", marginVertical: 12 },
-  title: { fontSize: 26, fontWeight: "800", color: "#111827" },
-  subtitle: { fontSize: 14, color: "#6b7280", marginTop: 4, textAlign: "center" },
-  alert: { backgroundColor: "#fef3c7", borderRadius: 8, padding: 10, marginBottom: 12 },
-  alertText: { fontSize: 13, color: "#92400e" },
-  alertError: { backgroundColor: "#fee2e2", borderRadius: 8, padding: 10, marginBottom: 12 },
-  errorText: { fontSize: 13, color: "#dc2626" },
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 16, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
-  sectionTitle: { fontSize: 15, fontWeight: "700", color: "#374151", marginBottom: 8 },
-  controls: { flexDirection: "row", gap: 10, marginTop: 16 },
-  row: { flexDirection: "row", gap: 10, marginTop: 12 },
-  pendingLocal: { marginTop: 14 },
-  listHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  item: { backgroundColor: "#f3f4f6", borderRadius: 10, padding: 12, marginBottom: 8, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  itemBody: { flex: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  itemLeft: { flex: 1, marginRight: 10 },
-  itemDuration: { fontSize: 12, color: "#6b7280", marginTop: 4 },
-  itemRight: { gap: 6 },
-  empty: { fontSize: 14, color: "#9ca3af", textAlign: "center", marginVertical: 16, paddingHorizontal: 16 },
+  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  content: { padding: 20, paddingBottom: 40 },
+
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 16,
+  },
+
+  label: { fontSize: 14, fontWeight: "700", color: "#374151", marginBottom: 8 },
+  input: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+    color: "#111827",
+    minHeight: 96,
+  },
+  infoNote: {
+    backgroundColor: "#FFF7ED",
+    borderLeftWidth: 4,
+    borderLeftColor: ORANGE_SOFT,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+  },
+  infoNoteText: { fontSize: 12, color: "#9A3412" },
+
+  recordArea: { alignItems: "center" },
+  recordHint: {
+    textAlign: "center",
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 12,
+  },
+  recordHintActive: {
+    color: "#DC2626",
+    fontWeight: "700",
+    fontSize: 16,
+    fontVariant: ["tabular-nums"],
+  },
+  recordButton: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  recordButtonActive: { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" },
+  warningText: {
+    textAlign: "center",
+    fontSize: 11,
+    color: "#9CA3AF",
+    marginTop: 10,
+    marginBottom: 24,
+  },
+
+  uploadButton: {
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: BLUE_PRIMARY,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 54,
+  },
+  uploadButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  secondaryLink: { alignItems: "center", marginTop: 16 },
+  secondaryLinkText: { color: BLUE_PRIMARY, fontSize: 13, fontWeight: "600" },
+
+  disabled: { opacity: 0.45 },
+
+  alertWarning: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  alertWarningText: { fontSize: 13, color: "#92400E" },
+  alertError: {
+    backgroundColor: "#FEE2E2",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  alertErrorText: { fontSize: 13, color: "#DC2626" },
 });

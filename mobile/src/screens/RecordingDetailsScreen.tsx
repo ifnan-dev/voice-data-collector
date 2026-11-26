@@ -67,7 +67,7 @@ export default function RecordingDetailsScreen() {
           <Text style={styles.label}>Duration</Text>
           <Text style={styles.value}>{recording.duration_seconds == null ? "--" : recording.duration_seconds.toFixed(2)} seconds</Text>
 
-          <Text style={styles.label}>Audio Path (R2)</Text>
+          <Text style={styles.label}>Audio Path</Text>
           <Text style={styles.value}>{recording.audio_path}</Text>
 
           <Text style={styles.label}>Created At</Text>

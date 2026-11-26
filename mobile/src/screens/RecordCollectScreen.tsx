@@ -18,7 +18,8 @@ import type { StackNavigationProp } from "@react-navigation/stack";
 import type { RootStackParamList } from "../navigation/types";
 import { useRecorder } from "../hooks/useRecorder";
 import { usePlayback } from "../hooks/usePlayback";
-import { apiService } from "../services/api";
+import { apiService, recordingFileName, recordingMimeType } from "../services/api";
+import { WAV_EXTENSION, WAV_MIME_TYPE } from "../hooks/useRecorder";
 import { AudioRow } from "../components/AudioRow";
 import { StatusStepper, BLUE_PRIMARY } from "../components/StatusStepper";
 
@@ -46,6 +47,8 @@ export default function RecordCollectScreen() {
 
   const [transcription, setTranscription] = useState("");
   const [savedUri, setSavedUri] = useState<string | null>(null);
+  const [savedExtension, setSavedExtension] = useState(WAV_EXTENSION);
+  const [savedMimeType, setSavedMimeType] = useState(WAV_MIME_TYPE);
   const [savedDuration, setSavedDuration] = useState(0);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -135,6 +138,8 @@ export default function RecordCollectScreen() {
         return;
       }
       setSavedUri(result.uri);
+      setSavedExtension(result.extension);
+      setSavedMimeType(result.mimeType);
       setSavedDuration(finalSeconds);
       setRecordingSeconds(finalSeconds);
     } finally {
@@ -186,8 +191,8 @@ export default function RecordCollectScreen() {
     try {
       await apiService.saveRecording(
         savedUri,
-        `recording-${Date.now()}.m4a`,
-        "audio/m4a",
+        recordingFileName(savedExtension),
+        recordingMimeType(savedExtension, savedMimeType),
         transcription.trim(),
         "om",
         savedDuration,
@@ -203,9 +208,12 @@ export default function RecordCollectScreen() {
     }
   }, [
     savedUri,
+    hasRecording,
     isTranscribed,
     transcription,
     savedDuration,
+    savedExtension,
+    savedMimeType,
     stopPlayback,
     resetForm,
   ]);

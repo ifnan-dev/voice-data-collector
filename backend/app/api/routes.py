@@ -1,5 +1,6 @@
 """REST API routes for speech recording collection."""
 
+import asyncio
 import os
 import tempfile
 import uuid
@@ -10,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import get_database, get_storage
 from app.services.database import SpeechDatabase
-from app.services.storage import SupabaseStorage
+from app.services.storage import R2Storage
 from app.core.config import get_settings
 from app.models.schemas import (
     ErrorResponse,
@@ -23,6 +24,11 @@ settings = get_settings()
 
 MAX_UPLOAD_BYTES = settings.max_upload_size_mb * 1024 * 1024
 ALLOWED_EXTENSIONS = tuple(settings.allowed_audio_extensions)
+
+# R2/Supabase calls are blocking and have no built-in timeout. Run them in a
+# worker thread with a hard cap so one slow request cannot stall the event loop
+# or leave the mobile app waiting until its own 120s timeout.
+STORAGE_TIMEOUT_SECONDS = 30
 
 
 def _validate_audio(file: UploadFile) -> str:
@@ -59,10 +65,10 @@ async def create_recording(
     database=Depends(get_database),
     storage=Depends(get_storage),
 ):
-    """Upload audio to Supabase Storage and save the matching record to Supabase.
+    """Upload audio to Cloudflare R2 and save the matching record to Supabase.
 
     The UUID is generated server-side so the audio object path and the
-    database row share the same identifier. If either the Storage upload or the
+    database row share the same identifier. If either the R2 upload or the
     Supabase insert fails, an error is raised and the local temp file is
     preserved so nothing is silently lost.
     """
@@ -78,9 +84,21 @@ async def create_recording(
         tmp_path = tmp.name
 
     try:
-        # 1. Upload audio to Supabase Storage.
+        # 1. Upload audio to Cloudflare R2 (offloaded + timed out).
         try:
-            storage.upload(tmp_path, recording_id, ext)
+            await asyncio.wait_for(
+                asyncio.to_thread(storage.upload, tmp_path, recording_id, ext),
+                timeout=STORAGE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            storage.delete(object_key)
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=(
+                    "Audio upload to storage timed out. Check the server's "
+                    "connection to Cloudflare R2."
+                ),
+            )
         except RuntimeError as exc:
             # Upload failed: keep the temp file, surface the error.
             raise HTTPException(
@@ -90,12 +108,25 @@ async def create_recording(
 
         # 2. Insert record into Supabase with the same UUID + object path.
         try:
-            record = database.insert(
-                recording_id=recording_id,
-                audio_path=object_key,
-                transcription=transcription,
-                language=language,
-                duration_seconds=duration_seconds,
+            record = await asyncio.wait_for(
+                asyncio.to_thread(
+                    database.insert,
+                    recording_id,
+                    object_key,
+                    transcription,
+                    language,
+                    duration_seconds,
+                ),
+                timeout=STORAGE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            storage.delete(object_key)
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=(
+                    "Database save timed out. Check the server's connection "
+                    "to Supabase."
+                ),
             )
         except Exception as exc:
             # Insert failed: attempt to clean up the Storage object we just uploaded
@@ -170,7 +201,7 @@ async def get_recording_audio(
     database=Depends(get_database),
     storage=Depends(get_storage),
 ):
-    """Provide a temporary signed URL for private Supabase Storage audio playback."""
+    """Provide a temporary signed URL for private Cloudflare R2 audio playback."""
     try:
         record = database.get(recording_id)
     except Exception as exc:
@@ -199,7 +230,7 @@ async def health():
     storage_ok = False
     supabase_ok = False
     try:
-        storage = SupabaseStorage()
+        storage = R2Storage()
         storage_ok = storage.health_check()
     except Exception:
         storage_ok = False

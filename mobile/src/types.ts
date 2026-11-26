@@ -4,6 +4,8 @@ export interface LocalRecording {
   uri: string;
   durationSeconds: number;
   mimeType: string;
+  /** Container extension of the stored file, e.g. ".wav". */
+  extension?: string;
 }
 
 export interface Recording {

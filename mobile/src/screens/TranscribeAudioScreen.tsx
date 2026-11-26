@@ -14,7 +14,7 @@ import type { StackNavigationProp } from "@react-navigation/stack";
 import type { RouteProp } from "@react-navigation/native";
 import type { RootStackParamList } from "../navigation/types";
 import { pendingStore, type PendingRecording } from "../store/pendingStore";
-import { apiService } from "../services/api";
+import { apiService, recordingFileName, recordingMimeType } from "../services/api";
 import { usePlayback } from "../hooks/usePlayback";
 import { Button } from "../components/Button";
 import { TranscriptionEditor } from "../components/TranscriptionEditor";
@@ -45,8 +45,8 @@ export default function TranscribeAudioScreen() {
     try {
       await apiService.saveRecording(
         recording.uri,
-        `recording-${Date.now()}.m4a`,
-        recording.mimeType,
+        recordingFileName(recording.extension),
+        recordingMimeType(recording.extension, recording.mimeType),
         transcription,
         "om",
         recording.durationSeconds

@@ -5,6 +5,7 @@ export interface PendingRecording {
   uri: string;
   durationSeconds: number;
   mimeType: string;
+  extension?: string;
   createdAt: number;
 }
 

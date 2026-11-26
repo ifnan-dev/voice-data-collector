@@ -10,11 +10,19 @@ class Settings(BaseSettings):
     # Supabase (backend only - keep secret)
     # Accepts either the legacy service_role JWT key or a new sb_secret_... secret key.
     # Both provide elevated privileges and bypass Row Level Security.
+    # Used for the speech_records metadata table.
     supabase_url: str = ""
     supabase_service_role_key: str = ""
 
-    # Supabase Storage (private bucket for audio files - backend only)
-    supabase_storage_bucket: str = "speech-recordings"
+    # Cloudflare R2 object storage (backend only - keep secret).
+    # Audio files live in R2; Supabase holds only metadata.
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = "speech-recordings"
+    # Optional public base URL for a public bucket (e.g. https://pub-xxx.r2.dev).
+    # Leave empty to use short-lived presigned URLs for a private bucket.
+    r2_public_base_url: str = ""
 
     # Transcription (manual only - no auto-transcription)
     # Kept for future use if you want to add ASR later

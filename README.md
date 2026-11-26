@@ -8,7 +8,7 @@ A mobile application for collecting Afaan Oromo speech recordings and their corr
 - **Audio:** `expo-audio` (recording & playback)
 - **Backend:** Python + FastAPI
 - **Database:** Supabase PostgreSQL
-- **Audio storage:** Supabase Storage (private bucket, included in Supabase Spark plan — no credit card needed)
+- **Audio storage:** Cloudflare R2 (S3-compatible object storage; private bucket with presigned playback URLs)
 - **Transcription:** Manual only (no auto-transcription)
 
 ## Project structure
@@ -21,7 +21,7 @@ Afan-oromo-dataset/
 │   │   ├── core/config.py        # Pydantic settings (.env)
 │   │   ├── models/schemas.py     # Pydantic request/response schemas
 │   │   ├── services/
-│   │   │   ├── storage.py        # Supabase Storage client (replaces Cloudflare R2)
+│   │   │   ├── storage.py        # Cloudflare R2 (S3-compatible) storage client
 │   │   │   └── database.py       # Supabase PostgreSQL client
 │   │   ├── api/
 │   │   │   ├── routes.py         # /api/recordings, /api/recordings/{id}, ...
@@ -43,7 +43,7 @@ Afan-oromo-dataset/
 │   ├── tsconfig.json
 │   └── .env.example
 ├── sql/
-│   └── 001_create_speech_records.sql   # Supabase table + RLS + storage bucket notes
+│   └── 001_create_speech_records.sql   # Supabase table + RLS (audio lives in R2)
 ├── README.md
 └── .gitignore
 ```
@@ -63,16 +63,21 @@ Run `sql/001_create_speech_records.sql` in the Supabase SQL Editor. It:
 3. Adds an index on `created_at`.
 4. Enables Row Level Security with public read and service-role insert policies.
 
-### 3. Create the Supabase Storage bucket
+### 3. Create the Cloudflare R2 bucket
 
-Go to **Storage → New Bucket** in the Supabase Dashboard:
+In the Cloudflare dashboard go to **R2 → Create bucket**:
 - Name: `speech-recordings`
-- Public: **OFF** (private bucket)
-- File size limit: 50 MB (or your preferred limit)
+- Location: automatic
+- Access: **private** (the backend generates short-lived presigned URLs for playback)
 
-The bucket name must match `SUPABASE_STORAGE_BUCKET` in `backend/.env`.
+Then create an **R2 API token** (R2 → Manage API Tokens → Create) with **Object Read & Write** permission and copy:
+- Account ID → `R2_ACCOUNT_ID`
+- Access Key ID → `R2_ACCESS_KEY_ID`
+- Secret Access Key → `R2_SECRET_ACCESS_KEY`
 
-### 4. Get your credentials
+The bucket name must match `R2_BUCKET_NAME` in `backend/.env`. For a public bucket, set `R2_PUBLIC_BASE_URL` to its public URL (e.g. `https://pub-xxx.r2.dev`) to skip presigning.
+
+### 4. Get your Supabase credentials
 
 Go to **Settings → API** and copy:
 - Project URL → `SUPABASE_URL`
@@ -90,7 +95,10 @@ Required (keep secret, backend only):
 
 - `SUPABASE_URL` — Supabase project URL (`https://<project-ref>.supabase.co`).
 - `SUPABASE_SERVICE_ROLE_KEY` — Supabase elevated key. Use either the legacy `service_role` JWT key or a new `sb_secret_...` secret key. Both bypass Row Level Security and must stay backend-only.
-- `SUPABASE_STORAGE_BUCKET` — name of your private Supabase Storage bucket (e.g. `speech-recordings`).
+- `R2_ACCOUNT_ID` — Cloudflare account ID.
+- `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` — R2 API token credentials (Object Read & Write).
+- `R2_BUCKET_NAME` — R2 bucket for audio (e.g. `speech-recordings`).
+- `R2_PUBLIC_BASE_URL` — optional; public base URL for a public bucket (leave empty for private + presigned URLs).
 
 2. Install dependencies:
 
@@ -141,22 +149,33 @@ Press `a` for Android emulator, or scan with Expo Go on a device.
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/recordings` | POST | Upload audio to Supabase Storage + save metadata and manual transcription to Supabase |
+| `/api/recordings` | POST | Upload audio to Cloudflare R2 + save metadata and manual transcription to Supabase |
 | `/api/recordings` | GET | List saved recordings (newest first) |
 | `/api/recordings/{id}` | GET | Get a single recording |
-| `/api/recordings/{id}/audio` | GET | Temporary signed URL for private Supabase Storage audio playback |
-| `/health` | GET | Supabase Storage + Supabase DB connectivity |
+| `/api/recordings/{id}/audio` | GET | Temporary signed URL for private Cloudflare R2 audio playback |
+| `/health` | GET | Cloudflare R2 + Supabase DB connectivity |
 | `/` | GET | Service info |
 
-All secret credentials (Supabase service-role key) live **only** on the backend. The mobile app never sees them.
+All secret credentials (Supabase service-role key, R2 token) live **only** on the backend. The mobile app never sees them.
+
+## Audio format (lossless WAV)
+
+Every take is stored as an uncompressed **16-bit PCM WAV** (mono, 16 kHz):
+
+- **Android / iOS:** audio is captured straight from the microphone as PCM through `expo-audio`'s `useAudioStream` (`encoding: "int16"`, `format: "wav"`). No AAC/Opus encoder is involved, so the samples are bit-exact and can be re-encoded later without compounding quality loss.
+- **Web:** browsers cannot capture PCM (`MediaRecorder` only offers Opus). The highest-bitrate Opus is recorded and decoded to a standard PCM WAV file on stop (`src/services/wav.ts`).
+- **Never lost:** a finished take is written to the app's document directory (`recordings/`) and copied there by `preserveTake` as soon as recording stops, so it survives app restarts and later takes reusing the recorder's temp path.
+- Uploads use the file's real extension and `Content-Type` (`audio/wav`), and the backend stores the object with the matching content type. `.wav` is first in `allowed_audio_extensions`.
+
+Because the format is uncompressed, size is roughly **32 KB per second** (~1.9 MB per minute). Keep `max_upload_size_mb` in mind for long takes.
 
 ## Save-recording workflow
 
 1. The backend generates a UUID server-side.
-2. Audio is uploaded to Supabase Storage at `recordings/<uuid>.<ext>`.
+2. Audio is uploaded to Cloudflare R2 at `recordings/<uuid>.<ext>`.
 3. The same UUID + object path and the user's manual transcription are inserted into Supabase in one row.
-4. On Storage upload failure the error is surfaced and the local temp file is preserved.
-5. On Supabase insert failure the just-uploaded Storage object is deleted to avoid orphans, and the error is surfaced.
+4. On R2 upload failure the error is surfaced and the local temp file is preserved.
+5. On Supabase insert failure the just-uploaded R2 object is deleted to avoid orphans, and the error is surfaced.
 
 ## Interchangeable workflow (recording + transcription both optional)
 

@@ -1,11 +1,11 @@
 """API dependency providers (singletons for services)."""
 
 from app.services.database import SpeechDatabase
-from app.services.storage import SupabaseStorage
+from app.services.storage import R2Storage
 
 
 _database: SpeechDatabase | None = None
-_storage: SupabaseStorage | None = None
+_storage: R2Storage | None = None
 
 
 def get_database() -> SpeechDatabase:
@@ -15,8 +15,8 @@ def get_database() -> SpeechDatabase:
     return _database
 
 
-def get_storage() -> SupabaseStorage:
+def get_storage() -> R2Storage:
     global _storage
     if _storage is None:
-        _storage = SupabaseStorage()
+        _storage = R2Storage()
     return _storage

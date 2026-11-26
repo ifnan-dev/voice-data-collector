@@ -31,14 +31,10 @@ CREATE POLICY "Allow service role insert"
     ON speech_records FOR INSERT
     WITH CHECK (true);
 
--- 5. Supabase Storage bucket for audio files
--- Note: Storage buckets are typically created via the Supabase Dashboard
--- (Storage → Create bucket) or via the Supabase CLI/API, not via SQL.
--- Create a private bucket named 'speech-recordings' in your Supabase project:
---   Dashboard → Storage → New Bucket → name: speech-recordings → Public: OFF
+-- 5. Audio files are stored in Cloudflare R2 (not Supabase Storage)
+-- Audio objects live in a Cloudflare R2 bucket; this table only stores metadata
+-- (including the R2 object path in audio_path, e.g. 'recordings/<uuid>.wav').
 --
--- The bucket name must match SUPABASE_STORAGE_BUCKET in backend/.env.
-
--- Example SQL for bucket creation (may require supabase extensions):
--- INSERT INTO storage.buckets (id, name, public) VALUES ('speech-recordings', 'speech-recordings', false)
--- ON CONFLICT (id) DO NOTHING;
+-- Create a private bucket named 'speech-recordings' in the Cloudflare R2 dashboard
+-- (R2 → Create bucket), then create an Object Read & Write API token.
+-- The bucket name must match R2_BUCKET_NAME in backend/.env.

@@ -5,6 +5,27 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8000";
 
 type RNFiles = { uri: string; type: string; name: string };
 
+const MIME_BY_EXTENSION: Record<string, string> = {
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".webm": "audio/webm",
+};
+
+/**
+ * Build an upload filename from the recording's real extension. The extension
+ * decides how the backend stores and validates the audio, so we never label
+ * a file something it is not.
+ */
+export function recordingFileName(extension = ".wav", prefix = "recording"): string {
+  return `${prefix}-${Date.now()}${extension}`;
+}
+
+export function recordingMimeType(extension = ".wav", fallback?: string): string {
+  return fallback ?? MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
+}
+
 export class ApiService {
   private client: AxiosInstance;
 
@@ -45,9 +66,10 @@ export class ApiService {
       (formData as any).append("duration_seconds", String(durationSeconds));
     }
 
-    const res = await this.client.post("/api/recordings", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    // Do NOT set Content-Type manually: React Native's XHR layer adds
+    // `multipart/form-data; boundary=...` itself. Hard-coding the header
+    // without a boundary makes the upload stall forever on device.
+    const res = await this.client.post("/api/recordings", formData);
     return res.data;
   }
 
@@ -69,8 +91,8 @@ export class ApiService {
     };
   }
 
-  async healthCheck(): Promise<{ r2: boolean; supabase: boolean }> {
-    const res = await this.client.get("/health");
+  async healthCheck(): Promise<{ storage: boolean; supabase: boolean }> {
+    const res = await this.client.get("/api/health");
     return res.data;
   }
 }

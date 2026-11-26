@@ -12,7 +12,7 @@ import type { StackNavigationProp } from "@react-navigation/stack";
 import type { RouteProp } from "@react-navigation/native";
 import type { RootStackParamList } from "../navigation/types";
 import { pendingStore, type PendingText } from "../store/pendingStore";
-import { apiService } from "../services/api";
+import { apiService, recordingFileName, recordingMimeType } from "../services/api";
 import { useRecorder } from "../hooks/useRecorder";
 import { Button } from "../components/Button";
 import { TimerDisplay } from "../components/TimerDisplay";
@@ -60,7 +60,12 @@ export default function RecordFromTextScreen() {
       const result = await stop();
       if (timerRef.current) clearInterval(timerRef.current);
       if (result?.uri) {
-        setLocalRecording({ uri: result.uri, durationSeconds: result.durationSeconds, mimeType: "audio/m4a" });
+        setLocalRecording({
+          uri: result.uri,
+          durationSeconds: result.durationSeconds,
+          mimeType: result.mimeType,
+          extension: result.extension,
+        });
         setSeconds(result.durationSeconds);
       }
     } else if (status === "paused") {
@@ -76,8 +81,8 @@ export default function RecordFromTextScreen() {
     try {
       await apiService.saveRecording(
         localRecording.uri,
-        `recording-${Date.now()}.m4a`,
-        localRecording.mimeType,
+        recordingFileName(localRecording.extension),
+        recordingMimeType(localRecording.extension, localRecording.mimeType),
         text,
         "om",
         localRecording.durationSeconds
